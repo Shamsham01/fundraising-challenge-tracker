@@ -68,3 +68,73 @@ export async function triggerLeaderboardRecompute(campaignId: string): Promise<v
   revalidatePath("/");
   revalidatePath("/campaigns");
 }
+
+export type CreateCampaignResult =
+  | { ok: true; slug: string; title: string }
+  | { ok: false; error: string };
+
+export async function createCampaign(formData: FormData): Promise<CreateCampaignResult> {
+  const supa = await createSupabaseServerClient();
+  const { data: u } = await supa.auth.getUser();
+  if (!u.user || u.user.app_metadata?.role !== "admin") {
+    return { ok: false, error: "Not authorized" };
+  }
+  const title = String(formData.get("title") ?? "");
+  const slug = String(formData.get("slug") ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/^-|-$/g, "");
+  const description = String(formData.get("description") ?? "");
+  const starts = String(formData.get("starts") ?? "");
+  const ends = String(formData.get("ends") ?? "");
+  const types = String(formData.get("types") ?? "Run,Walk");
+  const objective = String(formData.get("objective") ?? "total_distance");
+  if (!title || !slug || !starts || !ends) {
+    return { ok: false, error: "Title, slug, and dates are required" };
+  }
+  const admin = getSupabaseServiceRole();
+  const { data, error } = await admin
+    .from("campaigns")
+    .insert({
+      title,
+      slug,
+      description,
+      starts_at: starts,
+      ends_at: ends,
+      objective: objective as "total_distance",
+      created_by_user_id: u.user.id,
+    })
+    .select("id, slug, title")
+    .single();
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+  const campId = data!.id as string;
+  const outSlug = data!.slug as string;
+  const outTitle = data!.title as string;
+  const list = types
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  for (const t of list) {
+    const { error: atErr } = await admin.from("campaign_allowed_activity_types").insert({
+      campaign_id: campId,
+      strava_sport_type: t,
+    });
+    if (atErr) {
+      return { ok: false, error: atErr.message };
+    }
+  }
+  await admin.from("audit_logs").insert({
+    actor_user_id: u.user.id,
+    action: "campaign.create",
+    entity: "campaigns",
+    entity_id: campId,
+    metadata: { slug: outSlug },
+  });
+  revalidatePath("/");
+  revalidatePath("/campaigns");
+  revalidatePath("/admin/campaigns");
+  revalidatePath(`/campaigns/${outSlug}`);
+  return { ok: true, slug: outSlug, title: outTitle };
+}

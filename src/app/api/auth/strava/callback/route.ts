@@ -59,19 +59,40 @@ export async function GET(request: NextRequest) {
         new URL("/auth/error?e=config", env.NEXT_PUBLIC_APP_URL),
       );
     }
-    const tok = await exchangeAuthorizationCode(code, {
-      clientId: serverEnv.STRAVA_CLIENT_ID!,
-      clientSecret: serverEnv.STRAVA_CLIENT_SECRET,
-      redirectUri: serverEnv.STRAVA_REDIRECT_URI,
-    });
-    const athlete = (tok as { athlete: { id: number; firstname: string; lastname: string; username: string | null } }).athlete;
-    accessToken = (tok as { access_token: string }).access_token;
-    refreshToken = (tok as { refresh_token: string }).refresh_token;
-    expiresIso = new Date(computeExpiresAtSeconds(tok as { expires_in: number; expires_at?: number }) * 1000).toISOString();
-    athleteId = athlete.id;
-    athleteFirst = athlete.firstname;
-    athleteLast = athlete.lastname;
-    stravaUsername = athlete.username;
+    try {
+      const tok = await exchangeAuthorizationCode(code, {
+        clientId: serverEnv.STRAVA_CLIENT_ID!,
+        clientSecret: serverEnv.STRAVA_CLIENT_SECRET,
+        redirectUri: serverEnv.STRAVA_REDIRECT_URI,
+      });
+      const athlete = (tok as { athlete: { id: number; firstname: string; lastname: string; username: string | null } })
+        .athlete;
+      accessToken = (tok as { access_token: string }).access_token;
+      refreshToken = (tok as { refresh_token: string }).refresh_token;
+      expiresIso = new Date(computeExpiresAtSeconds(tok as { expires_in: number; expires_at?: number }) * 1000).toISOString();
+      athleteId = athlete.id;
+      athleteFirst = athlete.firstname;
+      athleteLast = athlete.lastname;
+      stravaUsername = athlete.username;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const lower = msg.toLowerCase();
+      if (
+        msg.includes("403") ||
+        lower.includes("limit of connected athletes") ||
+        (lower.includes("athlete") && lower.includes("limit"))
+      ) {
+        return NextResponse.redirect(
+          new URL("/auth/error?e=strava_athlete_limit", env.NEXT_PUBLIC_APP_URL),
+        );
+      }
+      return NextResponse.redirect(
+        new URL(
+          `/auth/error?e=${encodeURIComponent(msg.slice(0, 400))}`,
+          env.NEXT_PUBLIC_APP_URL,
+        ),
+      );
+    }
   }
   const email = participantStravaEmail(athleteId);
   const password = participantDerivedPassword(athleteId);
