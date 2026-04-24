@@ -1,0 +1,16 @@
+[build]
+  command = "npm run build"
+
+# npm install -D @netlify/plugin-nextjs
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+[functions]
+  directory = "netlify/functions"
+
+# Configure scheduled functions in Netlify UI to call:
+#   GET https://<site>/api/cron/reconcile?secret=${CRON_SECRET}
+# (Use same CRON_SECRET as in environment variables)
+
+[context.production.environment]
+  NODE_VERSION = "20"
