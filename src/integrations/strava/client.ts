@@ -46,6 +46,7 @@ export async function exchangeAuthorizationCode(
       client_secret: creds.clientSecret,
       code,
       grant_type: "authorization_code",
+      redirect_uri: creds.redirectUri,
     }),
   });
   if (!res.ok) {
