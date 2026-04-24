@@ -1,12 +1,15 @@
+# OpenNext/Netlify runs Next (App Router, /api/* route handlers) via the plugin.
+# Keep publish = ".next" so the adapter finds the build output; do not set Publish to
+# "out" (static export) in the Netlify UI — that breaks API routes.
 [build]
   command = "npm run build"
+  publish = ".next"
 
-# npm install -D @netlify/plugin-nextjs
 [[plugins]]
   package = "@netlify/plugin-nextjs"
 
-[functions]
-  directory = "netlify/functions"
+# netlify/functions/ is the default; omit [functions] so it never overrides the
+# Next.js runtime’s bundled serverless output.
 
 # Configure scheduled functions in Netlify UI to call:
 #   GET https://<site>/api/cron/reconcile?secret=${CRON_SECRET}
