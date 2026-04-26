@@ -1,8 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { z } from "zod";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { recomputeLeaderboard } from "@/lib/strava/activity-pipeline";
 
 const updateAthlete = z.object({
   displayName: z.string().min(1).max(120),
@@ -17,6 +19,7 @@ export async function updateAthleteProfile(fd: FormData): Promise<void> {
   const { data: u } = await supa.auth.getUser();
   if (!u.user) return;
   const rawConsent = String(fd.get("consentDataProcessing") ?? "");
+  const rawLeaderboard = String(fd.get("consentPublicLeaderboard") ?? "");
   const parsed = updateAthlete.safeParse({
     displayName: String(fd.get("displayName") ?? ""),
     bio: String(fd.get("bio") ?? ""),
@@ -24,7 +27,12 @@ export async function updateAthleteProfile(fd: FormData): Promise<void> {
     fundraisingPageUrl: fd.get("fundraisingPageUrl"),
   });
   if (!parsed.success) return;
-  const touchConsent = rawConsent === "on" ? { consent_data_processing_at: new Date().toISOString() } : {};
+  const touchConsent =
+    rawConsent === "on" ? { consent_data_processing_at: new Date().toISOString() } : {};
+  const touchLb =
+    rawLeaderboard === "on"
+      ? { consent_public_leaderboard_at: new Date().toISOString() }
+      : { consent_public_leaderboard_at: null as string | null };
   const { error } = await supa
     .from("athlete_profiles")
     .update({
@@ -33,11 +41,27 @@ export async function updateAthleteProfile(fd: FormData): Promise<void> {
       location: parsed.data.location || null,
       fundraising_page_url: parsed.data.fundraisingPageUrl ?? null,
       ...touchConsent,
+      ...touchLb,
     })
     .eq("user_id", u.user.id);
   if (error) return;
+  const { data: partRows } = await supa
+    .from("campaign_participants")
+    .select("campaign_id")
+    .eq("user_id", u.user.id)
+    .is("left_at", null);
+  for (const pr of partRows ?? []) {
+    try {
+      await recomputeLeaderboard(pr.campaign_id as string);
+    } catch {
+      // non-fatal
+    }
+  }
   revalidatePath("/settings/profile");
   revalidatePath("/dashboard");
+  revalidatePath("/");
+  revalidatePath("/campaigns");
+  redirect("/settings/profile");
 }
 
 const updateAdmin = z.object({
@@ -68,4 +92,5 @@ export async function updateAdminProfile(fd: FormData): Promise<void> {
   if (error) return;
   revalidatePath("/admin");
   revalidatePath("/admin/profile");
+  redirect("/admin/profile");
 }

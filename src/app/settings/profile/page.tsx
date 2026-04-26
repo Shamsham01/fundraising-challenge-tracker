@@ -101,6 +101,23 @@ export default async function ProfileSettingsPage() {
               page. You can request deletion in privacy settings.
             </label>
           </div>
+          <div className="flex items-start gap-2 space-y-0">
+            <input
+              type="checkbox"
+              name="consentPublicLeaderboard"
+              value="on"
+              id="consentLb"
+              defaultChecked={!!(p as { consent_public_leaderboard_at?: string | null })?.consent_public_leaderboard_at}
+              className="mt-1 size-4 rounded border"
+            />
+            <label htmlFor="consentLb" className="text-sm text-muted-foreground">
+              I consent to appear on{" "}
+              <strong className="text-foreground">public leaderboards</strong> for challenges I join,
+              using my display name, profile photo, and challenge-approved totals (distance, etc.) stored
+              in this app—not live Strava feeds. You can turn this off anytime; we will update published
+              boards on save.
+            </label>
+          </div>
           <div className="flex flex-wrap gap-2">
             <Button type="submit">Save</Button>
             <DisconnectStravaButton />

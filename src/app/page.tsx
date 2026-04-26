@@ -8,6 +8,9 @@ import Link from "next/link";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ArrowRight } from "lucide-react";
+import { getGlobalDistanceLeaderboard } from "@/lib/leaderboard-global";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 const HERO_IMAGE =
   "https://images.justgiving.com/image/5313cd6e-873f-497b-886d-b79747415ead.jpg";
@@ -33,6 +36,7 @@ export default async function HomePage() {
   const totalKm =
     (aggs ?? []).reduce((s, r) => s + (Number(r.included_distance_m) || 0), 0) / 1000;
   const jg = isJustGivingEnabledClient();
+  const globalLb = await getGlobalDistanceLeaderboard(15);
   return (
     <div>
       <SiteHeader />
@@ -132,6 +136,62 @@ export default async function HomePage() {
               </CardContent>
             </Card>
           </div>
+
+          <section>
+            <h2 className="mb-1 text-2xl font-bold tracking-tight">Top distance (all challenges)</h2>
+            <p className="mb-4 max-w-2xl text-sm text-muted-foreground">
+              Combined approved distance from challenges in this app, for participants who opted in to
+              public leaderboards. Not a live Strava feed—see{" "}
+              <Link href="/privacy" className="text-primary underline">
+                privacy
+              </Link>
+              .
+            </p>
+            <div className="overflow-x-auto rounded-lg border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-12">#</TableHead>
+                    <TableHead>Participant</TableHead>
+                    <TableHead className="text-right">Total distance</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {globalLb.map((row) => (
+                    <TableRow key={row.userId}>
+                      <TableCell className="font-medium tabular-nums">{row.rank}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <Avatar className="size-8 border border-border">
+                            {row.avatarUrl ? <AvatarImage src={row.avatarUrl} alt="" /> : null}
+                            <AvatarFallback className="text-xs">
+                              {row.displayName.slice(0, 2).toUpperCase()}
+                            </AvatarFallback>
+                          </Avatar>
+                          <span>{row.displayName}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right font-medium tabular-nums">
+                        {(row.totalDistanceM / 1000).toFixed(2)} km
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {globalLb.length === 0 && (
+                    <TableRow>
+                      <TableCell
+                        colSpan={3}
+                        className="text-center text-sm text-muted-foreground"
+                      >
+                        No public leaderboard data yet, or the database function is not installed. Run
+                        the latest Supabase migration and ensure participants opt in under Settings →
+                        Profile.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </section>
 
           <section>
             <h2 className="mb-6 text-2xl font-bold tracking-tight">Campaigns</h2>

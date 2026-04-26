@@ -138,3 +138,47 @@ export async function createCampaign(formData: FormData): Promise<CreateCampaign
   revalidatePath(`/campaigns/${outSlug}`);
   return { ok: true, slug: outSlug, title: outTitle };
 }
+
+export type DeleteCampaignResult = { ok: true } | { ok: false; error: string };
+
+export async function softDeleteCampaign(campaignId: string): Promise<DeleteCampaignResult> {
+  const p = uuid.safeParse(campaignId);
+  if (!p.success) {
+    return { ok: false, error: "Invalid campaign" };
+  }
+  const supa = await createSupabaseServerClient();
+  const { data: u } = await supa.auth.getUser();
+  if (!u.user || u.user.app_metadata?.role !== "admin") {
+    return { ok: false, error: "Not authorized" };
+  }
+  const admin = getSupabaseServiceRole();
+  const { data: c, error: fe } = await admin
+    .from("campaigns")
+    .select("id, slug, title")
+    .eq("id", p.data)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (fe || !c) {
+    return { ok: false, error: fe?.message ?? "Not found" };
+  }
+  const now = new Date().toISOString();
+  const { error } = await admin
+    .from("campaigns")
+    .update({ deleted_at: now })
+    .eq("id", p.data);
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+  await admin.from("audit_logs").insert({
+    actor_user_id: u.user.id,
+    action: "campaign.soft_delete",
+    entity: "campaigns",
+    entity_id: c.id,
+    metadata: { slug: c.slug, title: c.title },
+  });
+  revalidatePath("/");
+  revalidatePath("/campaigns");
+  revalidatePath("/admin/campaigns");
+  revalidatePath(`/campaigns/${c.slug as string}`);
+  return { ok: true };
+}

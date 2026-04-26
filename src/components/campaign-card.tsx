@@ -13,11 +13,21 @@ export function CampaignCard(props: {
   startsAt: string;
   endsAt: string;
   isFeatured?: boolean;
+  /** Highlight the card (e.g. just created) */
+  isHighlight?: boolean;
 }) {
   const img = campaignImagePublicUrl(props.imagePath);
   return (
-    <Link href={`/campaigns/${props.slug}`} className="block">
-      <Card className="h-full transition hover:shadow-md">
+    <Link
+      id={`campaign-card-${props.slug}`}
+      href={`/campaigns/${props.slug}`}
+      className="block scroll-mt-24"
+    >
+      <Card
+        className={`h-full transition hover:shadow-md ${
+          props.isHighlight ? "ring-2 ring-primary ring-offset-2" : ""
+        }`}
+      >
         <div className="relative aspect-[16/9] w-full overflow-hidden rounded-t-xl bg-gradient-to-br from-slate-100 to-slate-200">
           {img ? (
             <Image

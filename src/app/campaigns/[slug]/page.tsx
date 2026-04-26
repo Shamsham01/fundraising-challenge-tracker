@@ -1,15 +1,43 @@
 import { notFound } from "next/navigation";
 import Image from "next/image";
+import Link from "next/link";
 import { SiteHeader } from "@/components/site-header";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { campaignImagePublicUrl } from "@/lib/storage/public-url";
+import { campaignImagePublicUrl, athleteAvatarPublicUrl } from "@/lib/storage/public-url";
 import { joinCampaign, leaveCampaignFromForm } from "@/app/actions/campaigns";
 import { buttonVariants, Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { format } from "date-fns";
+import type { CampaignObjective } from "@/domain/types";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 
 type Props = { params: Promise<{ slug: string }> };
+
+function formatLeaderboardCell(objective: CampaignObjective, score: number) {
+  switch (objective) {
+    case "total_distance":
+      return `${(score / 1000).toFixed(2)} km`;
+    case "total_moving_time": {
+      const s = Math.round(score);
+      return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
+    }
+    case "total_elevation":
+      return `${score.toFixed(0)} m`;
+    case "activity_count":
+      return String(Math.round(score));
+    default:
+      return typeof score === "number" ? score.toFixed(1) : String(score);
+  }
+}
+
+type LbRow = {
+  rank: number;
+  displayName: string;
+  score: number;
+  userId?: string;
+  avatarPath?: string | null;
+};
 
 export default async function CampaignDetailPage({ params }: Props) {
   const { slug } = await params;
@@ -42,9 +70,11 @@ export default async function CampaignDetailPage({ params }: Props) {
     .order("computed_at", { ascending: false })
     .limit(1)
     .maybeSingle();
-  const rows =
-    (lb?.snapshot as { rows?: { rank: number; displayName: string; score: number }[] } | null)
-      ?.rows ?? [];
+  const rawSnap = lb?.snapshot as
+    | { rows?: LbRow[]; objective?: CampaignObjective; computed?: string }
+    | null;
+  const rows = rawSnap?.rows ?? [];
+  const snapObjective = (rawSnap?.objective ?? c.objective) as CampaignObjective;
   const cover = campaignImagePublicUrl(c.campaign_image_path as string | null);
   const { count: pcount } = await supa
     .from("campaign_participants")
@@ -103,29 +133,51 @@ export default async function CampaignDetailPage({ params }: Props) {
         )}
         <div>
           <h2 className="mb-2 text-xl font-semibold">Leaderboard</h2>
+          <p className="mb-3 max-w-2xl text-sm text-muted-foreground">
+            Rankings use challenge-approved totals stored in this app (not live Strava feeds). Only
+            participants who have opted in to public leaderboards appear here. See{" "}
+            <Link href="/privacy" className="text-primary underline">
+              privacy &amp; consent
+            </Link>
+            .
+          </p>
           <div className="overflow-x-auto rounded-md border">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Rank</TableHead>
+                  <TableHead className="w-12">#</TableHead>
                   <TableHead>Participant</TableHead>
-                  <TableHead className="text-right">Score</TableHead>
+                  <TableHead className="text-right">Total</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map((r) => (
-                  <TableRow key={r.displayName + r.rank}>
-                    <TableCell>{r.rank}</TableCell>
-                    <TableCell>{r.displayName}</TableCell>
-                    <TableCell className="text-right">
-                      {typeof r.score === "number" ? r.score.toFixed(1) : r.score}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {rows.map((r) => {
+                  const av = r.avatarPath ? athleteAvatarPublicUrl(r.avatarPath) : null;
+                  return (
+                    <TableRow key={(r as LbRow).userId ?? r.displayName + r.rank}>
+                      <TableCell className="font-medium tabular-nums">{r.rank}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <Avatar className="size-8 border border-border">
+                            {av ? <AvatarImage src={av} alt="" /> : null}
+                            <AvatarFallback className="text-xs">
+                              {r.displayName.slice(0, 2).toUpperCase()}
+                            </AvatarFallback>
+                          </Avatar>
+                          <span>{r.displayName}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {formatLeaderboardCell(snapObjective, r.score)}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
                 {rows.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={3} className="text-center text-sm text-muted-foreground">
-                      No results yet. Sync activities after joining.
+                      No one on the public board yet, or all participants have turned off public leaderboard
+                      display in profile. Sync activities after joining and opt in under Settings → Profile.
                     </TableCell>
                   </TableRow>
                 )}

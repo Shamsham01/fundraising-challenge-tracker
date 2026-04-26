@@ -4,6 +4,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
+import { AdminDeleteCampaignButton } from "@/components/admin-delete-campaign-button";
 
 export default async function AdminCampaignsListPage() {
   const admin = getSupabaseServiceRole();
@@ -28,7 +29,7 @@ export default async function AdminCampaignsListPage() {
               <TableHead>Slug</TableHead>
               <TableHead>Window</TableHead>
               <TableHead>Featured</TableHead>
-              <TableHead />
+              <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -41,13 +42,19 @@ export default async function AdminCampaignsListPage() {
                   {format(new Date(r.ends_at as string), "PP")}
                 </TableCell>
                 <TableCell>{(r as { is_featured: boolean }).is_featured ? "Yes" : "—"}</TableCell>
-                <TableCell>
-                  <Link
-                    className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
-                    href={`/admin/campaigns/${r.id as string}/edit`}
-                  >
-                    Edit
-                  </Link>
+                <TableCell className="text-right">
+                  <div className="flex items-center justify-end gap-1">
+                    <Link
+                      className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+                      href={`/admin/campaigns/${r.id as string}/edit`}
+                    >
+                      Edit
+                    </Link>
+                    <AdminDeleteCampaignButton
+                      campaignId={r.id as string}
+                      title={r.title as string}
+                    />
+                  </div>
                 </TableCell>
               </TableRow>
             ))}

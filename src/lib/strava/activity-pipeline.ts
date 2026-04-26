@@ -285,24 +285,25 @@ export async function recomputeLeaderboard(campaignId: string) {
   const userIds = parts.map((p) => p.user_id as string);
   const { data: profs } = await supa
     .from("athlete_profiles")
-    .select("user_id, display_name, avatar_path")
+    .select("user_id, display_name, avatar_path, consent_public_leaderboard_at")
     .in("user_id", userIds);
   const profById = Object.fromEntries(
     (profs ?? []).map((p) => [p.user_id as string, p]),
   );
   const byUser: Record<
     string,
-    { score: number; joined: Date; name: string; avatar?: string | null }
+    { score: number; joined: Date; name: string; avatar?: string | null; leaderboardConsent: boolean }
   > = {};
   for (const p of parts) {
     const r = profById[p.user_id as string] as
-      | { display_name: string; avatar_path: string | null }
+      | { display_name: string; avatar_path: string | null; consent_public_leaderboard_at: string | null }
       | undefined;
     byUser[p.user_id as string] = {
       score: 0,
       joined: new Date(p.joined_at as string),
       name: r?.display_name ?? "Participant",
       avatar: r?.avatar_path,
+      leaderboardConsent: !!r?.consent_public_leaderboard_at,
     };
   }
   const { data: reviews } = await supa
@@ -338,7 +339,10 @@ export async function recomputeLeaderboard(campaignId: string) {
       });
     }
   }
-  const entries = Object.entries(byUser).map(([userId, v]) => ({
+  // Public leaderboards: only users who consented; derived totals in-app only (Strava API agreement).
+  const entries = Object.entries(byUser)
+    .filter(([, v]) => v.leaderboardConsent)
+    .map(([userId, v]) => ({
     userId,
     displayName: v.name,
     score: v.score,
@@ -353,12 +357,18 @@ export async function recomputeLeaderboard(campaignId: string) {
     version,
     snapshot: { rows: lb, objective, computed: new Date().toISOString() } as object,
   });
-  for (const row of lb) {
+  for (const p of parts) {
+    const uid = p.user_id as string;
+    const fullScore = byUser[uid]?.score ?? 0;
+    const publicRow = lb.find((x) => x.userId === uid);
     await supa
       .from("campaign_participants")
-      .update({ rank_cached: row.rank, cached_score: row.score })
+      .update({
+        rank_cached: publicRow ? publicRow.rank : null,
+        cached_score: fullScore,
+      })
       .eq("campaign_id", campaignId)
-      .eq("user_id", row.userId);
+      .eq("user_id", uid);
   }
   if (win) {
     await supa

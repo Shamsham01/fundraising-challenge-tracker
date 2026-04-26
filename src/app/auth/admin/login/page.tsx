@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import Link from "next/link";
 
 export default function AdminLoginPage() {
   const r = useRouter();
@@ -40,6 +41,15 @@ export default function AdminLoginPage() {
         Use Supabase email/password or magic link. The user must have{" "}
         <code className="rounded bg-muted px-1">app_metadata.role = admin</code> (set via service role
         or SQL).
+      </p>
+      <p className="text-sm text-muted-foreground">
+        <strong className="text-foreground">Participants:</strong> Strava users must be informed that
+        challenge leaderboards and campaign features use in-app, consent-based display of
+        campaign-derived stats—not raw Strava feeds for other athletes. See{" "}
+        <Link className="text-primary underline" href="/privacy">
+          privacy &amp; leaderboards
+        </Link>
+        .
       </p>
       <form onSubmit={onSubmit} className="space-y-3">
         <div>

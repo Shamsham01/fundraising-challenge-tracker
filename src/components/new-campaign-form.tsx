@@ -23,10 +23,8 @@ export function NewCampaignForm() {
       toast.error(res.error);
       return;
     }
-    toast.success("Challenge created", {
-      description: `"${res.title}" is live. Redirecting to the campaign page…`,
-    });
-    r.push(`/campaigns/${res.slug}`);
+    toast.success("Challenge created", { description: `"${res.title}" is live. Taking you to the campaign list…` });
+    r.push(`/campaigns?new=${encodeURIComponent(res.slug)}`);
     r.refresh();
   }
   return (
