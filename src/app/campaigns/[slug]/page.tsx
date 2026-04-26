@@ -11,33 +11,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { format } from "date-fns";
 import type { CampaignObjective } from "@/domain/types";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
+import { getCampaignLeaderboardForCampaignId } from "@/lib/campaign-leaderboard";
+import { formatLeaderboardCell } from "@/lib/leaderboard-format";
+import { prizeForRank } from "@/lib/prize-display";
 
 type Props = { params: Promise<{ slug: string }> };
-
-function formatLeaderboardCell(objective: CampaignObjective, score: number) {
-  switch (objective) {
-    case "total_distance":
-      return `${(score / 1000).toFixed(2)} km`;
-    case "total_moving_time": {
-      const s = Math.round(score);
-      return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
-    }
-    case "total_elevation":
-      return `${score.toFixed(0)} m`;
-    case "activity_count":
-      return String(Math.round(score));
-    default:
-      return typeof score === "number" ? score.toFixed(1) : String(score);
-  }
-}
-
-type LbRow = {
-  rank: number;
-  displayName: string;
-  score: number;
-  userId?: string;
-  avatarPath?: string | null;
-};
 
 export default async function CampaignDetailPage({ params }: Props) {
   const { slug } = await params;
@@ -63,18 +41,12 @@ export default async function CampaignDetailPage({ params }: Props) {
     .from("campaign_allowed_activity_types")
     .select("strava_sport_type")
     .eq("campaign_id", c.id);
-  const { data: lb } = await supa
-    .from("leaderboards_cache")
-    .select("snapshot, computed_at")
-    .eq("campaign_id", c.id)
-    .order("computed_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const rawSnap = lb?.snapshot as
-    | { rows?: LbRow[]; objective?: CampaignObjective; computed?: string }
-    | null;
-  const rows = rawSnap?.rows ?? [];
-  const snapObjective = (rawSnap?.objective ?? c.objective) as CampaignObjective;
+  const { rows, snapObjective, computedAt, prizes } =
+    await getCampaignLeaderboardForCampaignId(
+      c.id as string,
+      c.objective as string,
+    );
+  const showPrizeCol = prizes.length > 0;
   const cover = campaignImagePublicUrl(c.campaign_image_path as string | null);
   const { count: pcount } = await supa
     .from("campaign_participants")
@@ -143,50 +115,69 @@ export default async function CampaignDetailPage({ params }: Props) {
           </p>
           <div className="overflow-x-auto rounded-md border">
             <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-12">#</TableHead>
-                  <TableHead>Participant</TableHead>
-                  <TableHead className="text-right">Total</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rows.map((r) => {
-                  const av = r.avatarPath ? athleteAvatarPublicUrl(r.avatarPath) : null;
-                  return (
-                    <TableRow key={(r as LbRow).userId ?? r.displayName + r.rank}>
-                      <TableCell className="font-medium tabular-nums">{r.rank}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Avatar className="size-8 border border-border">
-                            {av ? <AvatarImage src={av} alt="" /> : null}
-                            <AvatarFallback className="text-xs">
-                              {r.displayName.slice(0, 2).toUpperCase()}
-                            </AvatarFallback>
-                          </Avatar>
-                          <span>{r.displayName}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {formatLeaderboardCell(snapObjective, r.score)}
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-12">#</TableHead>
+                    <TableHead>Participant</TableHead>
+                    {showPrizeCol ? <TableHead>Prize</TableHead> : null}
+                    <TableHead className="text-right">Total</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {rows.map((r) => {
+                    const av = r.avatarPath ? athleteAvatarPublicUrl(r.avatarPath) : null;
+                    const prize = prizeForRank(r.rank, prizes);
+                    const prizeCell = prize ? (
+                      <span
+                        title={prize.description ?? undefined}
+                        className={prize.description ? "cursor-help border-b border-dotted border-foreground/40" : undefined}
+                      >
+                        {prize.title}
+                      </span>
+                    ) : (
+                      "—"
+                    );
+                    return (
+                      <TableRow key={r.userId ?? r.displayName + r.rank}>
+                        <TableCell className="font-medium tabular-nums">{r.rank}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Avatar className="size-8 border border-border">
+                              {av ? <AvatarImage src={av} alt="" /> : null}
+                              <AvatarFallback className="text-xs">
+                                {r.displayName.slice(0, 2).toUpperCase()}
+                              </AvatarFallback>
+                            </Avatar>
+                            <span>{r.displayName}</span>
+                          </div>
+                        </TableCell>
+                        {showPrizeCol ? <TableCell className="text-sm">{prizeCell}</TableCell> : null}
+                        <TableCell className="text-right tabular-nums">
+                          {formatLeaderboardCell(
+                            snapObjective as CampaignObjective,
+                            r.score,
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                  {rows.length === 0 && (
+                    <TableRow>
+                      <TableCell
+                        colSpan={showPrizeCol ? 4 : 3}
+                        className="text-center text-sm text-muted-foreground"
+                      >
+                        No one on the public board yet, or all participants have turned off public leaderboard
+                        display in profile. Sync activities after joining and opt in under Settings → Profile.
                       </TableCell>
                     </TableRow>
-                  );
-                })}
-                {rows.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={3} className="text-center text-sm text-muted-foreground">
-                      No one on the public board yet, or all participants have turned off public leaderboard
-                      display in profile. Sync activities after joining and opt in under Settings → Profile.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
+                  )}
+                </TableBody>
             </Table>
           </div>
-          {lb?.computed_at && (
+          {computedAt && (
             <p className="mt-1 text-xs text-muted-foreground">
-              Updated {format(new Date(lb.computed_at as string), "PPpp")}
+              Updated {format(new Date(computedAt), "PPpp")}
             </p>
           )}
         </div>

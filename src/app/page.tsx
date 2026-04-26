@@ -9,13 +9,26 @@ import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ArrowRight } from "lucide-react";
 import { getGlobalDistanceLeaderboard } from "@/lib/leaderboard-global";
+import { getCampaignLeaderboardBySlug } from "@/lib/campaign-leaderboard";
+import { formatLeaderboardCell } from "@/lib/leaderboard-format";
+import { athleteAvatarPublicUrl } from "@/lib/storage/public-url";
+import { prizeForRank } from "@/lib/prize-display";
+import type { CampaignObjective } from "@/domain/types";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { HomeLeaderboardChallengeSelect } from "@/components/home-leaderboard-challenge-select";
 
 const HERO_IMAGE =
   "https://images.justgiving.com/image/5313cd6e-873f-497b-886d-b79747415ead.jpg";
 
-export default async function HomePage() {
+type HomeProps = { searchParams: Promise<{ challenge?: string }> };
+
+export default async function HomePage({ searchParams }: HomeProps) {
+  const sp = await searchParams;
+  const rawChallenge =
+    typeof sp.challenge === "string" && sp.challenge.trim().length > 0
+      ? sp.challenge.trim()
+      : null;
   const supa = await createSupabaseServerClient();
   const { data: campaigns } = await supa
     .from("campaigns")
@@ -37,6 +50,12 @@ export default async function HomePage() {
     (aggs ?? []).reduce((s, r) => s + (Number(r.included_distance_m) || 0), 0) / 1000;
   const jg = isJustGivingEnabledClient();
   const globalLb = await getGlobalDistanceLeaderboard(15);
+  const campaignLb = rawChallenge ? await getCampaignLeaderboardBySlug(rawChallenge) : null;
+  const filterChallenge = campaignLb ? rawChallenge : null;
+  const challengeOptions = (campaigns ?? []).map((c) => ({
+    slug: c.slug as string,
+    title: c.title as string,
+  }));
   return (
     <div>
       <SiteHeader />
@@ -138,59 +157,149 @@ export default async function HomePage() {
           </div>
 
           <section>
-            <h2 className="mb-1 text-2xl font-bold tracking-tight">Top distance (all challenges)</h2>
-            <p className="mb-4 max-w-2xl text-sm text-muted-foreground">
-              Combined approved distance from challenges in this app, for participants who opted in to
-              public leaderboards. Not a live Strava feed—see{" "}
+            <h2 className="mb-1 text-2xl font-bold tracking-tight">
+              {campaignLb
+                ? `Leaderboard — ${campaignLb.campaign.title}`
+                : "Top distance (all challenges)"}
+            </h2>
+            <p className="mb-3 max-w-2xl text-sm text-muted-foreground">
+              {campaignLb
+                ? `This challenge’s scoring rules and prizes apply only to this campaign. Rankings use approved totals in this app, not a live Strava feed. See `
+                : "Combined approved distance from challenges in this app, for participants who opted in to public leaderboards. Not a live Strava feed—see "}
               <Link href="/privacy" className="text-primary underline">
                 privacy
               </Link>
               .
             </p>
-            <div className="overflow-x-auto rounded-lg border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-12">#</TableHead>
-                    <TableHead>Participant</TableHead>
-                    <TableHead className="text-right">Total distance</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {globalLb.map((row) => (
-                    <TableRow key={row.userId}>
-                      <TableCell className="font-medium tabular-nums">{row.rank}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Avatar className="size-8 border border-border">
-                            {row.avatarUrl ? <AvatarImage src={row.avatarUrl} alt="" /> : null}
-                            <AvatarFallback className="text-xs">
-                              {row.displayName.slice(0, 2).toUpperCase()}
-                            </AvatarFallback>
-                          </Avatar>
-                          <span>{row.displayName}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right font-medium tabular-nums">
-                        {(row.totalDistanceM / 1000).toFixed(2)} km
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {globalLb.length === 0 && (
-                    <TableRow>
-                      <TableCell
-                        colSpan={3}
-                        className="text-center text-sm text-muted-foreground"
-                      >
-                        No public leaderboard data yet, or the database function is not installed. Run
-                        the latest Supabase migration and ensure participants opt in under Settings →
-                        Profile.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
+            {rawChallenge && !campaignLb && (
+              <p className="mb-3 text-sm text-amber-700 dark:text-amber-500">
+                No campaign matches that filter. Showing the combined distance board. Pick a challenge below.
+              </p>
+            )}
+            <div className="mb-4">
+              <p className="mb-2 text-sm font-medium text-muted-foreground">View leaderboard</p>
+              <HomeLeaderboardChallengeSelect
+                options={challengeOptions}
+                currentSlug={filterChallenge}
+              />
             </div>
+            {campaignLb ? (
+              <div className="overflow-x-auto rounded-lg border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-12">#</TableHead>
+                      <TableHead>Participant</TableHead>
+                      {campaignLb.prizes.length > 0 ? <TableHead>Prize</TableHead> : null}
+                      <TableHead className="text-right">Total</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {campaignLb.rows.map((r) => {
+                      const av = r.avatarPath ? athleteAvatarPublicUrl(r.avatarPath) : null;
+                      const prize = prizeForRank(r.rank, campaignLb.prizes);
+                      const showP = campaignLb.prizes.length > 0;
+                      return (
+                        <TableRow key={r.userId ?? r.displayName + r.rank}>
+                          <TableCell className="font-medium tabular-nums">{r.rank}</TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <Avatar className="size-8 border border-border">
+                                {av ? <AvatarImage src={av} alt="" /> : null}
+                                <AvatarFallback className="text-xs">
+                                  {r.displayName.slice(0, 2).toUpperCase()}
+                                </AvatarFallback>
+                              </Avatar>
+                              <span>{r.displayName}</span>
+                            </div>
+                          </TableCell>
+                          {showP ? (
+                            <TableCell className="text-sm">
+                              {prize ? (
+                                <span
+                                  title={prize.description ?? undefined}
+                                  className={
+                                    prize.description
+                                      ? "cursor-help border-b border-dotted border-foreground/40"
+                                      : undefined
+                                  }
+                                >
+                                  {prize.title}
+                                </span>
+                              ) : (
+                                "—"
+                              )}
+                            </TableCell>
+                          ) : null}
+                          <TableCell className="text-right font-medium tabular-nums">
+                            {formatLeaderboardCell(
+                              campaignLb.snapObjective as CampaignObjective,
+                              r.score,
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                    {campaignLb.rows.length === 0 && (
+                      <TableRow>
+                        <TableCell
+                          colSpan={campaignLb.prizes.length > 0 ? 4 : 3}
+                          className="text-center text-sm text-muted-foreground"
+                        >
+                          No one on the public board yet for this challenge, or all participants have turned off
+                          public display. Opt in under Settings → Profile and sync after joining.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            ) : (
+              <div className="overflow-x-auto rounded-lg border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-12">#</TableHead>
+                      <TableHead>Participant</TableHead>
+                      <TableHead className="text-right">Total distance</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {globalLb.map((row) => (
+                      <TableRow key={row.userId}>
+                        <TableCell className="font-medium tabular-nums">{row.rank}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Avatar className="size-8 border border-border">
+                              {row.avatarUrl ? <AvatarImage src={row.avatarUrl} alt="" /> : null}
+                              <AvatarFallback className="text-xs">
+                                {row.displayName.slice(0, 2).toUpperCase()}
+                              </AvatarFallback>
+                            </Avatar>
+                            <span>{row.displayName}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right font-medium tabular-nums">
+                          {(row.totalDistanceM / 1000).toFixed(2)} km
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {globalLb.length === 0 && (
+                      <TableRow>
+                        <TableCell
+                          colSpan={3}
+                          className="text-center text-sm text-muted-foreground"
+                        >
+                          No public leaderboard data yet, or the database function is not installed. Run
+                          the latest Supabase migration and ensure participants opt in under Settings →
+                          Profile.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
           </section>
 
           <section>

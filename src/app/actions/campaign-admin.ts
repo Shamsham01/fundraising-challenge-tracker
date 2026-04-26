@@ -67,6 +67,14 @@ export async function triggerLeaderboardRecompute(campaignId: string): Promise<v
   await recomputeLeaderboard(p.data);
   revalidatePath("/");
   revalidatePath("/campaigns");
+  const { data: camp } = await getSupabaseServiceRole()
+    .from("campaigns")
+    .select("slug")
+    .eq("id", p.data)
+    .maybeSingle();
+  if (camp?.slug) {
+    revalidatePath(`/campaigns/${camp.slug as string}`);
+  }
 }
 
 export type CreateCampaignResult =
@@ -181,4 +189,75 @@ export async function softDeleteCampaign(campaignId: string): Promise<DeleteCamp
   revalidatePath("/admin/campaigns");
   revalidatePath(`/campaigns/${c.slug as string}`);
   return { ok: true };
+}
+
+const prizeRowSchema = z.object({
+  placement: z.coerce.number().int().min(1),
+  title: z.string().min(1).max(500),
+  description: z.string().max(2000).optional().nullable(),
+});
+
+const prizePayloadSchema = z.array(prizeRowSchema);
+
+export async function setCampaignPrizes(formData: FormData): Promise<void> {
+  const supa = await createSupabaseServerClient();
+  const { data: u } = await supa.auth.getUser();
+  if (!u.user || u.user.app_metadata?.role !== "admin") {
+    return;
+  }
+  const idParse = z.string().uuid().safeParse(String(formData.get("campaignId") ?? ""));
+  if (!idParse.success) {
+    return;
+  }
+  const campaignId = idParse.data;
+  let items: z.infer<typeof prizePayloadSchema>;
+  try {
+    items = prizePayloadSchema.parse(
+      JSON.parse(String(formData.get("prizes") ?? "[]")),
+    );
+  } catch {
+    return;
+  }
+  const byPl = new Map<
+    number,
+    { title: string; description: string | null }
+  >();
+  for (const p of items) {
+    const desc = p.description?.trim() ? p.description.trim() : null;
+    byPl.set(p.placement, { title: p.title.trim(), description: desc });
+  }
+  const admin = getSupabaseServiceRole();
+  const { data: c, error: fe } = await admin
+    .from("campaigns")
+    .select("slug")
+    .eq("id", campaignId)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (fe || !c) {
+    return;
+  }
+  const { error: delErr } = await admin
+    .from("campaign_prizes")
+    .delete()
+    .eq("campaign_id", campaignId);
+  if (delErr) {
+    return;
+  }
+  const rows = Array.from(byPl.entries()).map(([placement, v]) => ({
+    campaign_id: campaignId,
+    placement,
+    title: v.title,
+    description: v.description,
+  }));
+  if (rows.length) {
+    const { error: insErr } = await admin.from("campaign_prizes").insert(rows);
+    if (insErr) {
+      return;
+    }
+  }
+  const slug = c.slug as string;
+  revalidatePath("/");
+  revalidatePath("/campaigns");
+  revalidatePath(`/campaigns/${slug}`);
+  revalidatePath(`/admin/campaigns/${campaignId}/edit`);
 }

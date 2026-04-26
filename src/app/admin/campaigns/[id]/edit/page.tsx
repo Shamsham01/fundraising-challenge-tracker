@@ -11,6 +11,8 @@ import { campaignImagePublicUrl } from "@/lib/storage/public-url";
 import Image from "next/image";
 import Link from "next/link";
 import { clearCampaignImage } from "@/app/actions/media";
+import { CampaignPrizesEditor } from "@/components/campaign-prizes-editor";
+import type { CampaignPrize } from "@/lib/campaign-leaderboard";
 
 type P = { params: Promise<{ id: string }> };
 
@@ -26,6 +28,11 @@ export default async function EditCampaignPage({ params }: P) {
   if (error || !c) {
     notFound();
   }
+  const { data: initialPrizes } = await admin
+    .from("campaign_prizes")
+    .select("placement, title, description")
+    .eq("campaign_id", id)
+    .order("placement", { ascending: true });
   const cover = campaignImagePublicUrl(c.campaign_image_path as string | null);
   return (
     <div className="space-y-8">
@@ -94,6 +101,16 @@ export default async function EditCampaignPage({ params }: P) {
           <Button type="submit">Save</Button>
         </div>
       </form>
+      <CampaignPrizesEditor
+        campaignId={id}
+        initialPrizes={
+          (initialPrizes ?? []).map((p) => ({
+            placement: p.placement as number,
+            title: p.title as string,
+            description: (p.description as string | null) ?? null,
+          })) as CampaignPrize[]
+        }
+      />
       <form
         action={async () => {
           "use server";
