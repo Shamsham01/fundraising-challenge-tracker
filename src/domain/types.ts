@@ -14,6 +14,8 @@ export interface EligibilityInput {
   campaignEnd: Date;
   activitySportType: string;
   allowedTypes: string[];
+  /** When set (e.g. from campaign_participants.joined_at), early joiners can log activities after join but before campaignStart. */
+  participantJoinedAt?: Date;
 }
 
 export interface EligibilityResult {

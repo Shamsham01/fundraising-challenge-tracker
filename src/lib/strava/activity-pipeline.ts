@@ -195,16 +195,23 @@ export async function recomputeActivityForUserCampaigns(activityUuid: string) {
       campaignEnd: new Date(c.ends_at as string),
       activitySportType: act.sport_type as string,
       allowedTypes: allowed,
+      participantJoinedAt: new Date(row.joined_at as string),
     });
     const { data: existingRev } = await supa
       .from("activity_reviews")
-      .select("status")
+      .select("status, review_notes")
       .eq("activity_id", act.id)
       .eq("campaign_id", row.campaign_id)
       .maybeSingle();
     const locked = existingRev?.status as string | undefined;
-    const mod =
-      locked && ["approved", "rejected", "flagged"].includes(locked)
+    const notes = (existingRev as { review_notes?: string | null } | null)?.review_notes ?? "";
+    const autoRejectReopen =
+      elig.ok &&
+      locked === "rejected" &&
+      (notes === "timeframe" || notes === "activity_type");
+    const mod: ModerationStatus = autoRejectReopen
+      ? initialModerationStatus(c.review_mode as ReviewMode, true)
+      : locked && ["approved", "rejected", "flagged"].includes(locked)
         ? (locked as ModerationStatus)
         : initialModerationStatus(c.review_mode as ReviewMode, elig.ok);
     const statusForTotals =
