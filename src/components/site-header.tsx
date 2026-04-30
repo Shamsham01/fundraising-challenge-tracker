@@ -8,6 +8,15 @@ export async function SiteHeader() {
   const supa = await createSupabaseServerClient();
   const { data: s } = await supa.auth.getUser();
   const isAdmin = s.user?.app_metadata?.role === "admin";
+  const { data: linkedProfile } =
+    isAdmin && s.user
+      ? await supa
+          .from("athlete_profiles")
+          .select("user_id")
+          .eq("user_id", s.user.id)
+          .maybeSingle()
+      : { data: null };
+  const showAdminStravaLink = isAdmin && !linkedProfile;
   return (
     <header className="sticky top-0 z-50 border-b border-border/80 bg-background/90 shadow-sm backdrop-blur-md supports-backdrop-filter:bg-background/80">
       <div className="mx-auto flex h-14 max-w-6xl items-center justify-between gap-2 px-4 sm:h-16">
@@ -49,6 +58,14 @@ export async function SiteHeader() {
                 >
                   Profile
                 </Link>
+                {showAdminStravaLink && (
+                  <Link
+                    href="/api/auth/strava/start"
+                    className={cn("shrink-0", buttonVariants({ size: "sm" }))}
+                  >
+                    Link Strava
+                  </Link>
+                )}
                 {isAdmin && (
                   <Link
                     href="/admin"

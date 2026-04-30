@@ -1,4 +1,6 @@
 const MAP: Record<string, string> = {
+  strava_admin_link_session:
+    "Linking Strava to an admin account requires you to stay signed in as admin until Strava redirects back. Open “Link Strava” from this site while logged in, then complete authorization.",
   strava_athlete_limit:
     "This Strava app has reached the number of athletes allowed before Strava’s review. The organiser can request a higher limit in the Strava developer program. This is a Strava account limit, not a bug in this site.",
   state: "Sign-in was cancelled or the session changed. Please try “Connect Strava” again from this site.",

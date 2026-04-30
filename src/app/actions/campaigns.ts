@@ -8,17 +8,50 @@ import { z } from "zod";
 
 const joinSchema = z.object({ campaignId: z.string().uuid() });
 
+function appUserKindFromJwt(
+  appMetadata: { role?: string } | undefined,
+): "admin" | "participant" {
+  return appMetadata?.role === "admin" ? "admin" : "participant";
+}
+
 export async function joinCampaign(formData: FormData): Promise<void> {
   const parsed = joinSchema.safeParse({ campaignId: formData.get("campaignId") });
   if (!parsed.success) return;
   const supa = await createSupabaseServerClient();
   const { data: u } = await supa.auth.getUser();
   if (!u.user) return;
-  const { error } = await supa.from("campaign_participants").insert({
-    campaign_id: parsed.data.campaignId,
-    user_id: u.user.id,
-  });
+
+  // Ensure public.users row exists (Strava callback does this for participants; email admins often don’t).
+  const svc = getSupabaseServiceRole();
+  const { error: userRowErr } = await svc.from("users").upsert(
+    { id: u.user.id, user_kind: appUserKindFromJwt(u.user.app_metadata as { role?: string }) },
+    { onConflict: "id" },
+  );
+  if (userRowErr) return;
+
+  const { data: existing } = await supa
+    .from("campaign_participants")
+    .select("id, left_at")
+    .eq("campaign_id", parsed.data.campaignId)
+    .eq("user_id", u.user.id)
+    .maybeSingle();
+
+  let error = null as { message?: string } | null;
+  if (existing?.left_at != null) {
+    const up = await supa
+      .from("campaign_participants")
+      .update({ left_at: null, joined_at: new Date().toISOString() })
+      .eq("id", existing.id);
+    error = up.error;
+  } else if (!existing) {
+    const ins = await supa.from("campaign_participants").insert({
+      campaign_id: parsed.data.campaignId,
+      user_id: u.user.id,
+    });
+    error = ins.error;
+  }
   if (error) return;
+
   await recomputeLeaderboard(parsed.data.campaignId);
   revalidatePath("/dashboard");
   revalidatePath("/campaigns");

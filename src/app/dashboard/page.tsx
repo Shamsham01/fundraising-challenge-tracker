@@ -12,9 +12,6 @@ export default async function DashboardPage() {
   const supa = await createSupabaseServerClient();
   const { data: s } = await supa.auth.getUser();
   if (!s.user) redirect("/api/auth/strava/start");
-  if (s.user.app_metadata?.role === "admin") {
-    redirect("/admin");
-  }
   const { data: prof } = await supa
     .from("athlete_profiles")
     .select("*")

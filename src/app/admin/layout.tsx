@@ -32,6 +32,8 @@ export default async function AdminLayout({
             <Link href="/admin/moderation">Moderation</Link>
             <Link href="/admin/audit">Audit</Link>
             <Link href="/admin/profile">Profile</Link>
+            <Link href="/dashboard">Participant dashboard</Link>
+            <Link href="/api/auth/strava/start">Link Strava</Link>
           </div>
           <div className="flex items-center gap-1 sm:gap-2">
             <ThemeToggle />
