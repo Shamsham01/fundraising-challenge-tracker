@@ -1,11 +1,7 @@
 import { SiteHeader } from "@/components/site-header";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
-import { updateAthleteProfile } from "@/app/actions/profile";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { ProfileSettingsForm } from "@/components/profile-settings-form";
 import { isJustGivingEnabledClient } from "@/lib/env";
 import { MediaUploader } from "@/components/media-uploader";
 import { athleteAvatarPublicUrl } from "@/lib/storage/public-url";
@@ -13,7 +9,6 @@ import Image from "next/image";
 import Link from "next/link";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { DisconnectStravaButton } from "@/components/disconnect-strava-button";
 
 export default async function ProfileSettingsPage() {
   const supa = await createSupabaseServerClient();
@@ -28,6 +23,25 @@ export default async function ProfileSettingsPage() {
     .maybeSingle();
   const jg = isJustGivingEnabledClient();
   const avatar = athleteAvatarPublicUrl(p?.avatar_path as string | null);
+  const formKey = [
+    p?.display_name ?? "",
+    p?.bio ?? "",
+    p?.location ?? "",
+    p?.fundraising_page_url ?? "",
+    p?.consent_data_processing_at ?? "",
+    (p as { consent_public_leaderboard_at?: string | null } | null)?.consent_public_leaderboard_at ??
+      "",
+  ].join("\0");
+  const initial = {
+    display_name: (p?.display_name as string | null) ?? null,
+    bio: (p?.bio as string | null) ?? null,
+    location: (p?.location as string | null) ?? null,
+    fundraising_page_url: (p?.fundraising_page_url as string | null) ?? null,
+    consent_data_processing_at: (p?.consent_data_processing_at as string | null) ?? null,
+    consent_public_leaderboard_at:
+      (p as { consent_public_leaderboard_at?: string | null } | null)?.consent_public_leaderboard_at ??
+      null,
+  };
   return (
     <div>
       <SiteHeader />
@@ -53,76 +67,7 @@ export default async function ProfileSettingsPage() {
           </div>
           <MediaUploader scope="athlete-avatar" label="Profile photo" />
         </div>
-        <form className="space-y-4" action={updateAthleteProfile}>
-          <div className="space-y-1">
-            <Label htmlFor="displayName">Display name</Label>
-            <Input
-              id="displayName"
-              name="displayName"
-              defaultValue={(p?.display_name as string) ?? ""}
-              required
-            />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="bio">Bio</Label>
-            <Textarea id="bio" name="bio" defaultValue={(p?.bio as string) ?? ""} />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="location">Location (optional)</Label>
-            <Input id="location" name="location" defaultValue={(p?.location as string) ?? ""} />
-          </div>
-          {jg && (
-            <div className="space-y-1">
-              <Label htmlFor="fundraisingPageUrl">Fundraising / JustGiving page URL</Label>
-              <Input
-                id="fundraisingPageUrl"
-                name="fundraisingPageUrl"
-                type="url"
-                placeholder="https://"
-                defaultValue={(p?.fundraising_page_url as string) ?? ""}
-              />
-            </div>
-          )}
-          <div className="flex items-start gap-2 space-y-0">
-            <input
-              type="checkbox"
-              name="consentDataProcessing"
-              value="on"
-              id="consent"
-              defaultChecked={!!p?.consent_data_processing_at}
-              className="mt-1 size-4 rounded border"
-            />
-            <label htmlFor="consent" className="text-sm text-muted-foreground">
-              I consent to the processing of my data for campaign participation, including Strava
-              activity sync, as described in the{" "}
-              <Link href="/privacy" className="text-primary underline">
-                privacy
-              </Link>{" "}
-              page. You can request deletion in privacy settings.
-            </label>
-          </div>
-          <div className="flex items-start gap-2 space-y-0">
-            <input
-              type="checkbox"
-              name="consentPublicLeaderboard"
-              value="on"
-              id="consentLb"
-              defaultChecked={!!(p as { consent_public_leaderboard_at?: string | null })?.consent_public_leaderboard_at}
-              className="mt-1 size-4 rounded border"
-            />
-            <label htmlFor="consentLb" className="text-sm text-muted-foreground">
-              I consent to appear on{" "}
-              <strong className="text-foreground">public leaderboards</strong> for challenges I join,
-              using my display name, profile photo, and challenge-approved totals (distance, etc.) stored
-              in this app—not live Strava feeds. You can turn this off anytime; we will update published
-              boards on save.
-            </label>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button type="submit">Save</Button>
-            <DisconnectStravaButton />
-          </div>
-        </form>
+        <ProfileSettingsForm key={formKey} initial={initial} justGiving={jg} />
         <p className="text-xs text-muted-foreground">
           Re-connect with Strava from the home page or dashboard if you disconnected.
         </p>

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getSupabaseServiceRole } from "@/lib/supabase/admin";
 import { recomputeLeaderboard } from "@/lib/strava/activity-pipeline";
 
 const updateAthlete = z.object({
@@ -14,10 +15,14 @@ const updateAthlete = z.object({
     .preprocess((v) => (v === "" || v === undefined ? undefined : v), z.string().url().optional()),
 });
 
-export async function updateAthleteProfile(fd: FormData): Promise<void> {
+export async function updateAthleteProfile(
+  fd: FormData,
+): Promise<{ ok: true } | { ok: false; error: string }> {
   const supa = await createSupabaseServerClient();
   const { data: u } = await supa.auth.getUser();
-  if (!u.user) return;
+  if (!u.user) {
+    return { ok: false, error: "Not signed in" };
+  }
   const rawConsent = String(fd.get("consentDataProcessing") ?? "");
   const rawLeaderboard = String(fd.get("consentPublicLeaderboard") ?? "");
   const parsed = updateAthlete.safeParse({
@@ -26,14 +31,35 @@ export async function updateAthleteProfile(fd: FormData): Promise<void> {
     location: String(fd.get("location") ?? ""),
     fundraisingPageUrl: fd.get("fundraisingPageUrl"),
   });
-  if (!parsed.success) return;
+  if (!parsed.success) {
+    const msg = parsed.error.issues[0]?.message ?? "Please check your profile fields";
+    return { ok: false, error: msg };
+  }
+
+  const svc = getSupabaseServiceRole();
+  const { data: row } = await svc
+    .from("athlete_profiles")
+    .select("user_id")
+    .eq("user_id", u.user.id)
+    .maybeSingle();
+  if (!row) {
+    return {
+      ok: false,
+      error:
+        "No athlete profile in the database yet. Open Dashboard and use Link Strava or Re-check Strava connection, then try again.",
+    };
+  }
+
   const touchConsent =
-    rawConsent === "on" ? { consent_data_processing_at: new Date().toISOString() } : {};
+    rawConsent === "on"
+      ? { consent_data_processing_at: new Date().toISOString() }
+      : { consent_data_processing_at: null as string | null };
   const touchLb =
     rawLeaderboard === "on"
       ? { consent_public_leaderboard_at: new Date().toISOString() }
       : { consent_public_leaderboard_at: null as string | null };
-  const { error } = await supa
+
+  const { error } = await svc
     .from("athlete_profiles")
     .update({
       display_name: parsed.data.displayName,
@@ -44,8 +70,12 @@ export async function updateAthleteProfile(fd: FormData): Promise<void> {
       ...touchLb,
     })
     .eq("user_id", u.user.id);
-  if (error) return;
-  const { data: partRows } = await supa
+
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+
+  const { data: partRows } = await svc
     .from("campaign_participants")
     .select("campaign_id")
     .eq("user_id", u.user.id)
@@ -61,7 +91,7 @@ export async function updateAthleteProfile(fd: FormData): Promise<void> {
   revalidatePath("/dashboard");
   revalidatePath("/");
   revalidatePath("/campaigns");
-  redirect("/settings/profile");
+  return { ok: true };
 }
 
 const updateAdmin = z.object({
