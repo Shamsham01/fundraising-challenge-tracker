@@ -55,6 +55,14 @@ export async function joinCampaign(formData: FormData): Promise<void> {
   await recomputeLeaderboard(parsed.data.campaignId);
   revalidatePath("/dashboard");
   revalidatePath("/campaigns");
+  const { data: slugRow } = await svc
+    .from("campaigns")
+    .select("slug")
+    .eq("id", parsed.data.campaignId)
+    .maybeSingle();
+  if (slugRow?.slug) {
+    revalidatePath(`/campaigns/${slugRow.slug as string}`);
+  }
 }
 
 export async function leaveCampaignFromForm(formData: FormData): Promise<void> {
@@ -74,6 +82,16 @@ export async function leaveCampaign(campaignId: string): Promise<void> {
   if (error) return;
   await recomputeLeaderboard(campaignId);
   revalidatePath("/dashboard");
+  revalidatePath("/campaigns");
+  const admin = getSupabaseServiceRole();
+  const { data: slugRow } = await admin
+    .from("campaigns")
+    .select("slug")
+    .eq("id", campaignId)
+    .maybeSingle();
+  if (slugRow?.slug) {
+    revalidatePath(`/campaigns/${slugRow.slug as string}`);
+  }
 }
 
 export async function setCampaignFeatured(
