@@ -11,8 +11,10 @@ const updateAthlete = z.object({
   displayName: z.string().min(1).max(120),
   bio: z.string().max(2000).optional(),
   location: z.string().max(200).optional().or(z.literal("")),
-  fundraisingPageUrl: z
-    .preprocess((v) => (v === "" || v === undefined ? undefined : v), z.string().url().optional()),
+  fundraisingPageUrl: z.preprocess(
+    (v) => (v === "" || v === undefined || v === null ? undefined : v),
+    z.string().url().optional(),
+  ),
 });
 
 export async function updateAthleteProfile(
@@ -25,11 +27,13 @@ export async function updateAthleteProfile(
   }
   const rawConsent = String(fd.get("consentDataProcessing") ?? "");
   const rawLeaderboard = String(fd.get("consentPublicLeaderboard") ?? "");
+  const fundraisingRaw = fd.get("fundraisingPageUrl");
   const parsed = updateAthlete.safeParse({
     displayName: String(fd.get("displayName") ?? ""),
     bio: String(fd.get("bio") ?? ""),
     location: String(fd.get("location") ?? ""),
-    fundraisingPageUrl: fd.get("fundraisingPageUrl"),
+    fundraisingPageUrl:
+      typeof fundraisingRaw === "string" ? fundraisingRaw : undefined,
   });
   if (!parsed.success) {
     const msg = parsed.error.issues[0]?.message ?? "Please check your profile fields";
