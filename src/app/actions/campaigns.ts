@@ -37,29 +37,18 @@ export async function joinCampaign(formData: FormData): Promise<CampaignMembersh
     return { ok: false, error: userRowErr.message ?? "Could not update user" };
   }
 
-  const { data: existing } = await supa
-    .from("campaign_participants")
-    .select("id, left_at")
-    .eq("campaign_id", parsed.data.campaignId)
-    .eq("user_id", u.user.id)
-    .maybeSingle();
-
-  let error = null as { message?: string } | null;
-  if (existing?.left_at != null) {
-    const up = await supa
-      .from("campaign_participants")
-      .update({ left_at: null, joined_at: new Date().toISOString() })
-      .eq("id", existing.id);
-    error = up.error;
-  } else if (!existing) {
-    const ins = await supa.from("campaign_participants").insert({
+  const joinedAt = new Date().toISOString();
+  const { error: upErr } = await supa.from("campaign_participants").upsert(
+    {
       campaign_id: parsed.data.campaignId,
       user_id: u.user.id,
-    });
-    error = ins.error;
-  }
-  if (error) {
-    return { ok: false, error: error.message ?? "Could not join campaign" };
+      left_at: null,
+      joined_at: joinedAt,
+    },
+    { onConflict: "campaign_id,user_id" },
+  );
+  if (upErr) {
+    return { ok: false, error: upErr.message ?? "Could not join campaign" };
   }
 
   await recomputeLeaderboard(parsed.data.campaignId);
