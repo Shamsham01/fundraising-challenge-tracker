@@ -4,8 +4,8 @@ import Link from "next/link";
 import { SiteHeader } from "@/components/site-header";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { campaignImagePublicUrl, athleteAvatarPublicUrl } from "@/lib/storage/public-url";
-import { joinCampaign, leaveCampaignFromForm } from "@/app/actions/campaigns";
-import { buttonVariants, Button } from "@/components/ui/button";
+import { CampaignJoinControl } from "@/components/campaign-join-control";
+import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { format } from "date-fns";
@@ -82,19 +82,7 @@ export default async function CampaignDetailPage({ params }: Props) {
         </div>
         <p className="text-sm">Participants: {pcount ?? 0}</p>
         {user ? (
-          joined ? (
-            <form action={leaveCampaignFromForm}>
-              <input type="hidden" name="campaignId" value={c.id as string} />
-              <Button type="submit" variant="outline">
-                Leave campaign
-              </Button>
-            </form>
-          ) : (
-            <form action={joinCampaign}>
-              <input type="hidden" name="campaignId" value={c.id as string} />
-              <Button type="submit">Join this campaign</Button>
-            </form>
-          )
+          <CampaignJoinControl campaignId={c.id as string} joined={!!joined} />
         ) : (
           <a
             href="/api/auth/strava/start"

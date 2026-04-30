@@ -8,18 +8,24 @@ import { z } from "zod";
 
 const joinSchema = z.object({ campaignId: z.string().uuid() });
 
+export type CampaignMembershipResult = { ok: true } | { ok: false; error: string };
+
 function appUserKindFromJwt(
   appMetadata: { role?: string } | undefined,
 ): "admin" | "participant" {
   return appMetadata?.role === "admin" ? "admin" : "participant";
 }
 
-export async function joinCampaign(formData: FormData): Promise<void> {
+export async function joinCampaign(formData: FormData): Promise<CampaignMembershipResult> {
   const parsed = joinSchema.safeParse({ campaignId: formData.get("campaignId") });
-  if (!parsed.success) return;
+  if (!parsed.success) {
+    return { ok: false, error: "Invalid campaign" };
+  }
   const supa = await createSupabaseServerClient();
   const { data: u } = await supa.auth.getUser();
-  if (!u.user) return;
+  if (!u.user) {
+    return { ok: false, error: "Not signed in" };
+  }
 
   // Ensure public.users row exists (Strava callback does this for participants; email admins often don’t).
   const svc = getSupabaseServiceRole();
@@ -27,7 +33,9 @@ export async function joinCampaign(formData: FormData): Promise<void> {
     { id: u.user.id, user_kind: appUserKindFromJwt(u.user.app_metadata as { role?: string }) },
     { onConflict: "id" },
   );
-  if (userRowErr) return;
+  if (userRowErr) {
+    return { ok: false, error: userRowErr.message ?? "Could not update user" };
+  }
 
   const { data: existing } = await supa
     .from("campaign_participants")
@@ -50,7 +58,9 @@ export async function joinCampaign(formData: FormData): Promise<void> {
     });
     error = ins.error;
   }
-  if (error) return;
+  if (error) {
+    return { ok: false, error: error.message ?? "Could not join campaign" };
+  }
 
   await recomputeLeaderboard(parsed.data.campaignId);
   revalidatePath("/dashboard");
@@ -63,24 +73,33 @@ export async function joinCampaign(formData: FormData): Promise<void> {
   if (slugRow?.slug) {
     revalidatePath(`/campaigns/${slugRow.slug as string}`);
   }
+  return { ok: true };
 }
 
-export async function leaveCampaignFromForm(formData: FormData): Promise<void> {
+export async function leaveCampaignFromForm(
+  formData: FormData,
+): Promise<CampaignMembershipResult> {
   const id = String(formData.get("campaignId") ?? "");
-  await leaveCampaign(id);
+  return leaveCampaign(id);
 }
 
-export async function leaveCampaign(campaignId: string): Promise<void> {
+export async function leaveCampaign(campaignId: string): Promise<CampaignMembershipResult> {
+  if (!z.string().uuid().safeParse(campaignId).success) {
+    return { ok: false, error: "Invalid campaign" };
+  }
   const supa = await createSupabaseServerClient();
   const { data: u } = await supa.auth.getUser();
-  if (!u.user) return;
+  if (!u.user) {
+    return { ok: false, error: "Not signed in" };
+  }
   const { error } = await supa
     .from("campaign_participants")
     .update({ left_at: new Date().toISOString() })
     .eq("campaign_id", campaignId)
     .eq("user_id", u.user.id);
-  if (error) return;
-  await recomputeLeaderboard(campaignId);
+  if (error) {
+    return { ok: false, error: error.message ?? "Could not leave campaign" };
+  }
   revalidatePath("/dashboard");
   revalidatePath("/campaigns");
   const admin = getSupabaseServiceRole();
@@ -92,6 +111,7 @@ export async function leaveCampaign(campaignId: string): Promise<void> {
   if (slugRow?.slug) {
     revalidatePath(`/campaigns/${slugRow.slug as string}`);
   }
+  return { ok: true };
 }
 
 export async function setCampaignFeatured(
