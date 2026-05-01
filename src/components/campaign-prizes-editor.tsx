@@ -57,7 +57,11 @@ export function CampaignPrizesEditor(props: {
         const fd = new FormData();
         fd.set("campaignId", props.campaignId);
         fd.set("prizes", jsonPayload);
-        await setCampaignPrizes(fd);
+        const res = await setCampaignPrizes(fd);
+        if (!res.ok) {
+          toast.error(res.error);
+          return;
+        }
         toast.success("Prizes saved");
         router.refresh();
       }}

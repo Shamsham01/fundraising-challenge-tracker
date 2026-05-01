@@ -20,7 +20,10 @@ export interface StravaActivity {
   distance: number;
   moving_time: number;
   total_elevation_gain: number;
+  /** @deprecated Prefer sport_type */
   type: string;
+  /** Preferred activity classification (SportType enum). */
+  sport_type?: string;
   start_date: string; // ISO
 }
 

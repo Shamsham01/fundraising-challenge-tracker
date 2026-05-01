@@ -12,6 +12,8 @@ import Image from "next/image";
 import Link from "next/link";
 import { clearCampaignImage } from "@/app/actions/media";
 import { CampaignPrizesEditor } from "@/components/campaign-prizes-editor";
+import { EditCampaignActivityTypesForm } from "@/components/edit-campaign-activity-types-form";
+import { canonicalizeStoredSportTypes } from "@/domain/strava-sport-types";
 import type { CampaignPrize } from "@/lib/campaign-leaderboard";
 
 type P = { params: Promise<{ id: string }> };
@@ -33,6 +35,13 @@ export default async function EditCampaignPage({ params }: P) {
     .select("placement, title, description")
     .eq("campaign_id", id)
     .order("placement", { ascending: true });
+  const { data: allowedTypesRows } = await admin
+    .from("campaign_allowed_activity_types")
+    .select("strava_sport_type")
+    .eq("campaign_id", id);
+  const initialActivityTypes = canonicalizeStoredSportTypes(
+    allowedTypesRows?.map((row) => row.strava_sport_type as string) ?? [],
+  );
   const cover = campaignImagePublicUrl(c.campaign_image_path as string | null);
   return (
     <div className="space-y-8">
@@ -101,6 +110,13 @@ export default async function EditCampaignPage({ params }: P) {
           <Button type="submit">Save</Button>
         </div>
       </form>
+      <section className="max-w-xl space-y-4 border-t pt-8">
+        <h2 className="text-lg font-semibold">Strava activity types</h2>
+        <EditCampaignActivityTypesForm
+          campaignId={id}
+          initialTypes={initialActivityTypes}
+        />
+      </section>
       <CampaignPrizesEditor
         campaignId={id}
         initialPrizes={

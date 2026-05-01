@@ -13,13 +13,14 @@ import {
 export async function GET(request: NextRequest) {
   const p = request.nextUrl.searchParams;
   const mode = p.get("hub.mode");
-  const token = p.get("hub.verify_token");
+  const token = p.get("hub.verify_token")?.trim() ?? "";
   const challenge = p.get("hub.challenge");
   const e = getServerEnv();
+  const expected = e.STRAVA_WEBHOOK_VERIFY_TOKEN?.trim() ?? "";
   if (isStravaMocked()) {
     return NextResponse.json({ "hub.challenge": challenge });
   }
-  if (mode === "subscribe" && token && challenge && token === e.STRAVA_WEBHOOK_VERIFY_TOKEN) {
+  if (mode === "subscribe" && token && challenge && expected && token === expected) {
     return NextResponse.json({ "hub.challenge": challenge });
   }
   return new NextResponse("Forbidden", { status: 403 });

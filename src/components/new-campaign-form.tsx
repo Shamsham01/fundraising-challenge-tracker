@@ -4,11 +4,14 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { createCampaign, type CreateCampaignResult } from "@/app/actions/campaign-admin";
+import { CampaignActivityTypesPicker } from "@/components/campaign-activity-types-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2 } from "lucide-react";
+
+const DEFAULT_ACTIVITY_TYPES = ["Run", "Walk", "Hike"] as const;
 
 export function NewCampaignForm() {
   const r = useRouter();
@@ -52,8 +55,27 @@ export function NewCampaignForm() {
         </div>
       </div>
       <div>
-        <Label htmlFor="types">Allowed types (comma)</Label>
-        <Input id="types" name="types" defaultValue="Run,Walk,Hike" className="mt-1.5" />
+        <Label>Strava activity types</Label>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Only activities of these types count toward the leaderboard. Use quick-add for common
+          bundles, or tick individual Strava{" "}
+          <a
+            className="underline underline-offset-2"
+            href="https://developers.strava.com/docs/reference/#api-models-SportType"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            SportType
+          </a>{" "}
+          values.
+        </p>
+        <div className="mt-3">
+          <CampaignActivityTypesPicker
+            fieldName="activityTypes"
+            defaultSelected={[...DEFAULT_ACTIVITY_TYPES]}
+            idPrefix="new-campaign"
+          />
+        </div>
       </div>
       <div>
         <Label htmlFor="objective">Objective</Label>

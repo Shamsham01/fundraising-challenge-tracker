@@ -148,7 +148,7 @@ export async function fetchAndUpsertStravaActivity(userId: string, stravaActivit
         user_id: userId,
         strava_activity_id: a.id,
         name: a.name,
-        sport_type: a.type,
+        sport_type: ((a.sport_type ?? a.type) || "Workout").trim() || "Workout",
         start_date: a.start_date,
         distance_m: a.distance,
         moving_time_s: a.moving_time,
@@ -165,7 +165,10 @@ export async function fetchAndUpsertStravaActivity(userId: string, stravaActivit
   return { kind: "upsert" as const, activityId: act!.id, activity: a };
 }
 
-export async function recomputeActivityForUserCampaigns(activityUuid: string) {
+export async function recomputeActivityForUserCampaigns(
+  activityUuid: string,
+  opts?: { skipLeaderboardRefresh?: boolean },
+) {
   const supa = getSupabaseServiceRole();
   const { data: act } = await supa
     .from("activities")
@@ -254,7 +257,25 @@ export async function recomputeActivityForUserCampaigns(activityUuid: string) {
     );
     void objective;
   }
-  await refreshLeaderboardForActivityUsers(activityUuid);
+  if (!opts?.skipLeaderboardRefresh) {
+    await refreshLeaderboardForActivityUsers(activityUuid);
+  }
+}
+
+/**
+ * Re-run eligibility for every activity already tied to this campaign (e.g. allowed types changed).
+ */
+export async function refreshCampaignActivityEligibility(campaignId: string): Promise<void> {
+  const supa = getSupabaseServiceRole();
+  const { data: revs } = await supa
+    .from("activity_reviews")
+    .select("activity_id")
+    .eq("campaign_id", campaignId);
+  const ids = [...new Set((revs ?? []).map((r) => r.activity_id as string))];
+  for (const aid of ids) {
+    await recomputeActivityForUserCampaigns(aid, { skipLeaderboardRefresh: true });
+  }
+  await recomputeLeaderboard(campaignId);
 }
 
 async function refreshLeaderboardForActivityUsers(activityUuid: string) {

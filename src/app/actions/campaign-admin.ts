@@ -4,7 +4,11 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getSupabaseServiceRole } from "@/lib/supabase/admin";
-import { recomputeLeaderboard } from "@/lib/strava/activity-pipeline";
+import {
+  recomputeLeaderboard,
+  refreshCampaignActivityEligibility,
+} from "@/lib/strava/activity-pipeline";
+import { parseCampaignActivityTypesPayload } from "@/domain/strava-sport-types";
 
 const uuid = z.string().uuid();
 
@@ -95,7 +99,19 @@ export async function createCampaign(formData: FormData): Promise<CreateCampaign
   const description = String(formData.get("description") ?? "");
   const starts = String(formData.get("starts") ?? "");
   const ends = String(formData.get("ends") ?? "");
-  const types = String(formData.get("types") ?? "Run,Walk");
+  const typesCsv = String(formData.get("types") ?? "");
+  const typesJson = String(formData.get("activityTypes") ?? "");
+  let typeList = parseCampaignActivityTypesPayload(typesJson);
+  if (!typeList.length && typesCsv.trim()) {
+    typeList = typesCsv
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .filter((t, i, arr) => arr.indexOf(t) === i);
+  }
+  if (!typeList.length) {
+    return { ok: false, error: "Select at least one Strava activity type" };
+  }
   const objective = String(formData.get("objective") ?? "total_distance");
   if (!title || !slug || !starts || !ends) {
     return { ok: false, error: "Title, slug, and dates are required" };
@@ -120,10 +136,7 @@ export async function createCampaign(formData: FormData): Promise<CreateCampaign
   const campId = data!.id as string;
   const outSlug = data!.slug as string;
   const outTitle = data!.title as string;
-  const list = types
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
+  const list = typeList;
   for (const t of list) {
     const { error: atErr } = await admin.from("campaign_allowed_activity_types").insert({
       campaign_id: campId,
@@ -145,6 +158,70 @@ export async function createCampaign(formData: FormData): Promise<CreateCampaign
   revalidatePath("/admin/campaigns");
   revalidatePath(`/campaigns/${outSlug}`);
   return { ok: true, slug: outSlug, title: outTitle };
+}
+
+export type UpdateAllowedActivityTypesResult =
+  | { ok: true }
+  | { ok: false; error: string };
+
+export async function updateCampaignAllowedActivityTypes(
+  formData: FormData,
+): Promise<UpdateAllowedActivityTypesResult> {
+  const supa = await createSupabaseServerClient();
+  const { data: u } = await supa.auth.getUser();
+  if (!u.user || u.user.app_metadata?.role !== "admin") {
+    return { ok: false, error: "Not authorized" };
+  }
+  const idParse = uuid.safeParse(String(formData.get("campaignId") ?? ""));
+  if (!idParse.success) {
+    return { ok: false, error: "Invalid campaign" };
+  }
+  const list = parseCampaignActivityTypesPayload(
+    String(formData.get("activityTypes") ?? "[]"),
+  );
+  if (!list.length) {
+    return { ok: false, error: "Select at least one Strava activity type" };
+  }
+  const admin = getSupabaseServiceRole();
+  const { data: c, error: fe } = await admin
+    .from("campaigns")
+    .select("id, slug")
+    .eq("id", idParse.data)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (fe || !c) {
+    return { ok: false, error: fe?.message ?? "Campaign not found" };
+  }
+  const { error: delErr } = await admin
+    .from("campaign_allowed_activity_types")
+    .delete()
+    .eq("campaign_id", idParse.data);
+  if (delErr) {
+    return { ok: false, error: delErr.message };
+  }
+  const { error: insErr } = await admin.from("campaign_allowed_activity_types").insert(
+    list.map((strava_sport_type) => ({
+      campaign_id: idParse.data,
+      strava_sport_type,
+    })),
+  );
+  if (insErr) {
+    return { ok: false, error: insErr.message };
+  }
+  await refreshCampaignActivityEligibility(idParse.data);
+  await admin.from("audit_logs").insert({
+    actor_user_id: u.user.id,
+    action: "campaign.activity_types",
+    entity: "campaigns",
+    entity_id: idParse.data,
+    metadata: { types: list } as object,
+  });
+  const slug = c.slug as string;
+  revalidatePath("/");
+  revalidatePath("/campaigns");
+  revalidatePath(`/campaigns/${slug}`);
+  revalidatePath(`/admin/campaigns/${idParse.data}/edit`);
+  return { ok: true };
 }
 
 export type DeleteCampaignResult = { ok: true } | { ok: false; error: string };
@@ -199,15 +276,21 @@ const prizeRowSchema = z.object({
 
 const prizePayloadSchema = z.array(prizeRowSchema);
 
-export async function setCampaignPrizes(formData: FormData): Promise<void> {
+export type SetCampaignPrizesResult =
+  | { ok: true }
+  | { ok: false; error: string };
+
+export async function setCampaignPrizes(
+  formData: FormData,
+): Promise<SetCampaignPrizesResult> {
   const supa = await createSupabaseServerClient();
   const { data: u } = await supa.auth.getUser();
   if (!u.user || u.user.app_metadata?.role !== "admin") {
-    return;
+    return { ok: false, error: "Not authorized" };
   }
   const idParse = z.string().uuid().safeParse(String(formData.get("campaignId") ?? ""));
   if (!idParse.success) {
-    return;
+    return { ok: false, error: "Invalid campaign" };
   }
   const campaignId = idParse.data;
   let items: z.infer<typeof prizePayloadSchema>;
@@ -216,7 +299,7 @@ export async function setCampaignPrizes(formData: FormData): Promise<void> {
       JSON.parse(String(formData.get("prizes") ?? "[]")),
     );
   } catch {
-    return;
+    return { ok: false, error: "Invalid prizes data" };
   }
   const byPl = new Map<
     number,
@@ -234,14 +317,14 @@ export async function setCampaignPrizes(formData: FormData): Promise<void> {
     .is("deleted_at", null)
     .maybeSingle();
   if (fe || !c) {
-    return;
+    return { ok: false, error: fe?.message ?? "Campaign not found" };
   }
   const { error: delErr } = await admin
     .from("campaign_prizes")
     .delete()
     .eq("campaign_id", campaignId);
   if (delErr) {
-    return;
+    return { ok: false, error: delErr.message };
   }
   const rows = Array.from(byPl.entries()).map(([placement, v]) => ({
     campaign_id: campaignId,
@@ -252,7 +335,7 @@ export async function setCampaignPrizes(formData: FormData): Promise<void> {
   if (rows.length) {
     const { error: insErr } = await admin.from("campaign_prizes").insert(rows);
     if (insErr) {
-      return;
+      return { ok: false, error: insErr.message };
     }
   }
   const slug = c.slug as string;
@@ -260,4 +343,5 @@ export async function setCampaignPrizes(formData: FormData): Promise<void> {
   revalidatePath("/campaigns");
   revalidatePath(`/campaigns/${slug}`);
   revalidatePath(`/admin/campaigns/${campaignId}/edit`);
+  return { ok: true };
 }

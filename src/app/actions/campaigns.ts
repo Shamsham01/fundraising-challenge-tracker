@@ -89,6 +89,7 @@ export async function leaveCampaign(campaignId: string): Promise<CampaignMembers
   if (error) {
     return { ok: false, error: error.message ?? "Could not leave campaign" };
   }
+  await recomputeLeaderboard(campaignId);
   revalidatePath("/dashboard");
   revalidatePath("/campaigns");
   const admin = getSupabaseServiceRole();

@@ -28,6 +28,7 @@ export const mockStrava = {
     moving_time: 1800,
     total_elevation_gain: 50,
     type: "Run",
+    sport_type: "Run",
     start_date: new Date().toISOString(),
   }),
   listAthleteActivities: async (): Promise<StravaActivity[]> => {
@@ -39,6 +40,7 @@ export const mockStrava = {
         moving_time: 3600,
         total_elevation_gain: 100,
         type: "Run",
+        sport_type: "Run",
         start_date: new Date().toISOString(),
       },
     ];
